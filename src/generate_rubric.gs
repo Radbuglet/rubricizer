@@ -12,7 +12,7 @@ const RubricGenerator = (function () {
 		return builder;
 	}
 
-	function wihoutLeading(strings, ...placeholders) {
+	function withoutLeading(strings, ...placeholders) {
 		const raw = noOpFormat(strings, ...placeholders);
 		return raw.replace(/^[ \t]+/gm, "");
 	}
@@ -632,7 +632,7 @@ const RubricGenerator = (function () {
 	}
 
 	//> Builder
-	const DEFAULT_MASTERY_EXPLANATIONS = wihoutLeading`\
+	const DEFAULT_MASTERY_EXPLANATIONS = withoutLeading`\
 	Learning standard mastery levels:
 	4* - (Commendation) Student work shows evidence of especially sophisticated, nuanced, or analytical thinking. 
 	4 - (Mastery) Student demonstrates mastery of the standards assessed. 

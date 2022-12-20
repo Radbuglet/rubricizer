@@ -1,4 +1,83 @@
 function gsHookGeneratePDFs() {
+	const SUMMARY_RUBRIC_NAME = "Summary Rubric";
+	const PROMPT_EXIT_EXCEPTION = "Please answer all prompts.";
+
+	//> Acquire all the resources used by this routine.
+	const gsheet = SpreadsheetApp.getActiveSpreadsheet();
+	const rubric = gsheet.getSheetByName(SUMMARY_RUBRIC_NAME);
+	const ui = SpreadsheetApp.getUi();
+
+	if (rubric === null) {
+		throw `The sheet containing the rubric you wish to turn into a PDF must be called "${SUMMARY_RUBRIC_NAME}".`;
+	}
+
+	//> Begin by obtaining the number of students in the class.
+	// This is done first because users might not know how many students are in their course and easily
+	// click out of this dialog, cancelling the routine.
+	let NUM_STUDENTS;
+	{
+		// Detect whether the teacher is using a canvas-generated gradebook.
+		//
+		// There are two types of users for Rubricizer: the English team—who uses Rubricizer to generate
+		// rubrics from start to finish—and teachers like Rob—who are capable of writing their own rubric
+		// displays and just need a tool to generate all `NUM_STUDENTS` PDFs. This tool needs to handle
+		// both types of users. Specifically, it needs to be able to auto-detect the number of students
+		// for a canvas-generated gradebook but it should also expose a manual prompt if the teacher
+		// customized their rubric in such a way that the assumption made here about student counts no
+		// longer apply.
+		let is_canvas;
+		const gradebook = gsheet.getSheetByName("Gradebook");
+		const gradebook_values = gradebook !== null ?
+			gradebook.getDataRange().getValues() :
+			null;
+
+		if (gradebook !== null) {
+			try {
+				// Because PDF generation is slow, we need to be really confident that we're working with a
+				// canvas-generated gradebook. We do this by reusing code from `RubricGenerator`, which implements
+				// exceedingly conservative parsing.
+				const _ignored = new RubricGenerator.Rubric(gradebook.getName(), gradebook_values[0]);
+				// TODO: To make this truly robust, we need to validate the actual student ID range
+				// to make sure it actually corresponds to our assumption that student IDs are
+				// assigned continuously.
+				is_canvas = true;
+			} catch (e) {
+				// TODO: We could actually test that the raised exception is of the appropriate type.
+				//  Unfortunately, doing so would require us to... raise an exception of the appropriate
+				//  type.
+
+				Logger.info(`Failed to parse gradebook headers as Canvas headers: ${e}. This likely means that we're working with a teacher-generated rubric.`);
+				is_canvas = false;
+			}
+		} else {
+			is_canvas = false;
+		}
+
+		// Then, determine the number of students in the class.
+		if (is_canvas) {
+			// In this case, we are simply using the number of rows in the sheet minus the header row.
+			NUM_STUDENTS = gradebook_values.length - 1;
+		} else {
+			// Otherwise, we ask the user to enter in the number of students explicitly.
+			let resp = ui.prompt(
+				"Student Count",
+				"How many students are in this class? (this corresponds to the maximum student ID plus one)",
+				ui.ButtonSet.OK_CANCEL,
+			);
+			if (resp.getSelectedButton() !== ui.Button.OK) {
+				throw PROMPT_EXIT_EXCEPTION;
+			}
+			resp = resp.getResponseText();
+			resp = parseInt(resp);
+			if (isNaN(resp)) {
+				throw "Please enter a number for the number of students in this class.";
+			}
+
+			NUM_STUDENTS = resp;
+		}
+	}
+
+	//========================================================================
 	var ran_obtainInfo = false; //for run-once-only capabilities
 
 	var info = pdf_obtain_info(); //new var so it doesn't run the function thrice
@@ -7,22 +86,8 @@ function gsHookGeneratePDFs() {
 	var OUTPUT_PDF_NAME = info[2];
 
 	Logger.log("ssID: " + String(ssID) + "\nOutput Folder Name: " + OUTPUT_FOLDER_NAME + "\nPDF Name: " + OUTPUT_PDF_NAME);
+	Logger.log("num of students: " + NUM_STUDENTS);
 
-	var gsheet = SpreadsheetApp.getActiveSpreadsheet();
-	var rubric = gsheet.getSheetByName("Summary Rubric"); //HARDCODED (but should be what the tabs're already named)
-	var gradebook = gsheet.getSheetByName("Gradebook"); //HARDCODED
-	//make sure that your spreadsheet tabs are named these!
-
-	//vv calculating variables vv
-	for (var i = 1; i < gradebook.getMaxColumns(); i++) {
-		if (gradebook.getRange(i, 1).getValue() === "") {
-			var NUM_STUDENTS = i - 1; //HARDCODED # of rows that aren't students, then subtract 1
-			Logger.log("num of students: " + NUM_STUDENTS);
-			break;
-		}
-	}
-
-	//========================================================================
 	//vv function defining vv
 	function pdf_obtain_info() {
 		if (ran_obtainInfo === true) {
@@ -32,7 +97,6 @@ function gsHookGeneratePDFs() {
 
 		let OUTPUT_FOLDER_NAME = "rubric_download", OUTPUT_PDF_NAME = "STUDENTNAME_Rubric"; //defaults
 
-		var ui = SpreadsheetApp.getUi();
 		// vv Dialogue Box for Name of output folder vv ========
 		var outputFolderPrompt = ui.prompt('Name of Output Folder', 'Please enter the name of the folder you\'d like to save the PDFs to. Please ensure the folder is in the same Drive location as this GSheet. If there is no folder, one will be made automatically.', ui.ButtonSet.OK_CANCEL);
 		if (outputFolderPrompt.getSelectedButton() == ui.Button.OK) {
@@ -179,7 +243,7 @@ function gsHookGeneratePDFs() {
 		pdf_getFolderByName_confirmation(OUTPUT_FOLDER_NAME);
 
 		Logger.log(rubric.getRange(2, 2).getValue())
-		for (var i = 2; i < NUM_STUDENTS + 2; i++) { //I don't remember why I needed the +2 //the i is for the student ID of the first rubric you'd like to make
+		for (var i = 1; i <= NUM_STUDENTS; i++) { //I don't remember why I needed the +2 //the i is for the student ID of the first rubric you'd like to make
 			rubric.getRange(1, 1).setValue(i);
 			studentName = rubric.getRange(1, 2).getValue();
 			Logger.log(studentName);
@@ -187,7 +251,6 @@ function gsHookGeneratePDFs() {
 
 		}
 		Logger.log("completed pdf_izer");
-		var ui = SpreadsheetApp.getUi();
 		ui.alert(String(NUM_STUDENTS) + " PDFs have been saved to the folder " + OUTPUT_FOLDER_NAME + "."); //TODO: confirm that the right PDFs (number & name) are actually in the GDrive folder(?)
 		ran_pdfizer = true;
 	}
